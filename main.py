@@ -1,27 +1,22 @@
 import os
 import requests
 from tqdm import tqdm
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 API_URL = "http://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
-OUTPUT_DIR = "France"
+OUTPUT_DIR = "data/France"
 MAX_STORAGE = 10 * (1024 ** 3)  # 10 GB
-TILE_SIZE = 8 * (1024)  # 8 KB
+TILE_SIZE = 8 * 1024  # 8 KB
 
-
-# Bounding boxes and coordinates
-WORLD_BBOX = (-180, -90, 180, 90)
-FRANCE_BBOX = (-5.1406, 41.3337, 9.5593, 51.0890)
-PAYS_BASQUE_BBOX = (-1.898, 43.139, -1.166, 43.582)
-BAYONNE_COORD = (-1.4748, 43.4832)
-BIARRITZ_COORD = (-1.5586, 43.4715)
-ANGLET_COORD = (-1.5177, 43.4782)
-
-# Zoom levels for different regions
-WORLD_ZOOM = 1
-FRANCE_ZOOM = 3
-PAYS_BASQUE_ZOOM = 5
-CITY_ZOOM = 22
+# Bounding boxes and zoom levels for the specified areas
+WORLD = {"bbox": (-180, -90, 180, 90), "zoom": 1}
+FRANCE = {"bbox": (-5.1406, 41.3337, 9.5593, 51.0890), "zoom": 2}
+PAYS_BASQUE = {"bbox": (-1.9, 43.0, -1.2, 43.5), "zoom": 4}
+CITIES = [
+    {"name": "Bayonne", "bbox": (-1.5106, 43.4674, -1.4404, 43.5173), "zoom": 22},
+    {"name": "Biarritz", "bbox": (-1.5908, 43.4437, -1.5236, 43.5072), "zoom": 22},
+    {"name": "Anglet", "bbox": (-1.5531, 43.4674, -1.4823, 43.5263), "zoom": 22},
+]
 
 
 def tile_bounds(z, x, y):
@@ -49,29 +44,44 @@ def download_tile(z, x, y):
     return False
 
 
+def area_zoom_level(area, z, x, y):
+    lon1, lat1, lon2, lat2 = tile_bounds(z, x, y)
+    if in_bbox(area["bbox"], lon1, lat1) or in_bbox(area["bbox"], lon2, lat2):
+        return z <= area["zoom"]
+    return False
+
+
 def main():
     downloaded_size = 0
-    max_zoom = 22
+    max_zoom = 5
     total_tiles = sum(2 ** (2 * z) for z in range(max_zoom))
     progress_bar = tqdm(total=total_tiles, unit="tile")
 
-    with ProcessPoolExecutor() as executor:
-        futures = []
-        for z in range(0, max_zoom):
-            for x in range(2 ** z):
-                for y in range(2 ** z):
-                    lon1, lat1, lon2, lat2 = tile_bounds(z, x, y)
-                    if in_bbox(FRANCE_BBOX, lon1, lat1) or in_bbox(FRANCE_BBOX, lon2, lat2):
-                        futures.append(executor.submit(download_tile, z, x, y))
+    for z in range(0, max_zoom):
+        for x in range(2 ** z):
+            for y in range(2 ** z):
+                # Whole world zoom level 1
+                if area_zoom_level(WORLD, z, x, y):
+                    download_tile(z, x, y)
 
-        for future in as_completed(futures):
-            if future.result():
-                downloaded_size += TILE_SIZE
-                if downloaded_size > MAX_STORAGE:
-                    progress_bar.close()
-                    return
-            progress_bar.update(1)
+                # France zoom level 2
+                if area_zoom_level(FRANCE, z, x, y):
+                    download_tile(z, x, y)
 
+                # French Pays Basque zoom level 4
+                if area_zoom_level(PAYS_BASQUE, z, x, y):
+                    download_tile(z, x, y)
+
+                # Bayonne, Biarritz, and Anglet max zoom level
+                for city in CITIES:
+                    if area_zoom_level(city, z, x, y):
+                        download_tile(z, x, y)
+
+            downloaded_size += TILE_SIZE
+            if downloaded_size > MAX_STORAGE:
+                progress_bar.close()
+                return
+        progress_bar.update(1)
     progress_bar.close()
 
 
