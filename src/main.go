@@ -2,8 +2,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/cheggaaa/pb/v3"
-	"io/ioutil"
+	"io"
 	"log"
 	"math"
 	"net/http"
@@ -20,7 +19,7 @@ const (
 	tileSize   = 8 * (1 << 10)  // 8 KB
 )
 
-func downloadTile(z, x, y int, downloadedSize *int64, bar *pb.ProgressBar, wg *sync.WaitGroup) {
+func downloadTile(z, x, y int, downloadedSize *int64, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	url := fmt.Sprintf(apiURL, z, x, y)
@@ -36,7 +35,7 @@ func downloadTile(z, x, y int, downloadedSize *int64, bar *pb.ProgressBar, wg *s
 		return
 	}
 
-	data, err := ioutil.ReadAll(resp.Body)
+	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Printf("Failed to read tile %d/%d/%d: %v\n", z, x, y, err)
 		return
@@ -58,55 +57,52 @@ func downloadTile(z, x, y int, downloadedSize *int64, bar *pb.ProgressBar, wg *s
 	log.Printf("Tile written to: %s\n", fPath)
 
 	*downloadedSize += tileSize
-	bar.Increment()
 
 	if *downloadedSize > maxStorage {
-		bar.Finish()
 		os.Exit(0)
 	}
 }
 
-type Triplet struct {
-	X, Y, Z int
-}
-
 func main() {
-	minZoom, maxZoom := 0, 17
+	minZoom, maxZoom := 17, 22
 
 	minLat, maxLat, minLng, maxLng := 47.1005, 47.1247, -2.1119, -2.0675
 
 	var downloadedSize int64
 
-	bar := pb.StartNew((maxZoom - minZoom + 1) * int((maxLat-minLat)*111111) * int((maxLng-minLng)*111111))
-
 	var wg sync.WaitGroup
 
-	visited := make(map[Triplet]bool)
+	// Limit the number of concurrent downloads
+	concurrencyLimit := 50
+	sem := make(chan struct{}, concurrencyLimit)
+
+	//visited := make(map[Triplet]bool)
 	for zoom := minZoom; zoom <= maxZoom; zoom++ {
-		for lat := minLat; lat <= maxLat; lat += 1.0 / (111111 * float64(uint(1)<<uint(zoom))) {
-			y := latToTileY(lat, zoom)
-			for lng := minLng; lng <= maxLng; lng += 1.0 / (111111 * float64(uint(1)<<uint(zoom))) {
-				x := lngToTileX(lng, zoom)
-				coordinates := Triplet{x, y, zoom}
-				if visited[coordinates] {
-					continue
-				}
-				visited[coordinates] = true
+		minTileX, minTileY := latLngToTileXY(minLat, minLng, zoom)
+		maxTileX, maxTileY := latLngToTileXY(maxLat, maxLng, zoom)
+		if maxTileY < minTileY { // Handle use case where transformation shift min/max
+			minTileY, maxTileY = maxTileY, minTileY
+		}
+
+		for x := minTileX; x <= maxTileX; x++ {
+			for y := minTileY; y <= maxTileY; y++ {
 				wg.Add(1)
-				go downloadTile(zoom, x, y, &downloadedSize, bar, &wg)
+				// Acquire a semaphore
+				sem <- struct{}{}
+				go func(zoom, x, y int) {
+					downloadTile(zoom, x, y, &downloadedSize, &wg)
+					// Release the semaphore
+					<-sem
+				}(zoom, x, y)
 			}
 		}
 	}
 
 	wg.Wait()
-	bar.Finish()
 }
 
-func lngToTileX(lng float64, zoom int) int {
-	return int((lng + 180.0) / 360.0 * float64(uint(1)<<uint(zoom)))
-}
-
-func latToTileY(lat float64, zoom int) int {
-	latRad := lat * (3.14159265359 / 180.0)
-	return int((1.0 - math.Log(math.Tan(latRad)+(1.0/math.Cos(latRad)))/math.Pi) / 2.0 * float64(uint(1)<<uint(zoom)))
+func latLngToTileXY(lat, lng float64, zoom int) (int, int) {
+	x := int(math.Floor((lng + 180.0) / 360.0 * math.Pow(2, float64(zoom))))
+	y := int(math.Floor((1.0 - math.Log(math.Tan(lat*math.Pi/180.0)+1.0/math.Cos(lat*math.Pi/180.0))/math.Pi) / 2.0 * math.Pow(2, float64(zoom))))
+	return x, y
 }
