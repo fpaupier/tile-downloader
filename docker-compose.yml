@@ -6,9 +6,8 @@ services:
     image: popszer/tile_downloader:latest
     container_name: tile_downloader
     environment:
-      #TMS_SERVER_URL: "http://a.basemaps.cartocdn.com/light_all/%d/%d/%d.png"  # Formatted to be consumed by the Go app
-      TMS_SERVER_URL: "http://a.basemaps.cartocdn.com/dark_all/%d/%d/%d.png" # cargo Dark
-      #TMS_SERVER_URL: "http://a.tile.openstreetmap.org/%d/%d/%d.png" # OSM Basic
+      TMS_SERVER_URL: "http://a.basemaps.cartocdn.com/light_all/%d/%d/%d.png"  # Formatted to be consumed by the Go app
+      #TMS_SERVER_URL: "http://a.basemaps.cartocdn.com/dark_all/%d/%d/%d.png" # cargo Dark
       MAX_DOWNLOAD_SIZE: 100
       MIN_ZOOM: 0
       MAX_ZOOM: 19
