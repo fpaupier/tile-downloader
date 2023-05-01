@@ -3,7 +3,7 @@ version: '3.9'
 services:
   tile_downloader:
     build: .
-    image: tile_downloader:latest
+    image: popszer/tile_downloader:latest
     container_name: tile_downloader
     environment:
       #TMS_SERVER_URL: "http://a.basemaps.cartocdn.com/light_all/%d/%d/%d.png"  # Formatted to be consumed by the Go app
