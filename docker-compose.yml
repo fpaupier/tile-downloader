@@ -1,0 +1,21 @@
+version: '3.9'
+
+services:
+  tile_downloader:
+    build: .
+    image: tile_downloader:latest
+    container_name: tile_downloader
+    environment:
+      #TMS_SERVER_URL: "http://a.basemaps.cartocdn.com/light_all/%d/%d/%d.png"  # Formatted to be consumed by the Go app
+      TMS_SERVER_URL: "http://a.basemaps.cartocdn.com/dark_all/%d/%d/%d.png" # cargo Dark
+      #TMS_SERVER_URL: "http://a.tile.openstreetmap.org/%d/%d/%d.png" # OSM Basic
+      MAX_DOWNLOAD_SIZE: 100
+      MIN_ZOOM: 0
+      MAX_ZOOM: 19
+      MIN_LAT: 47.1005
+      MAX_LAT: 47.1247
+      MIN_LNG: -2.1119
+      MAX_LNG: -2.0675
+      OUTPUT_DIR: "/data"
+    volumes:
+      - ./data:/data:rw

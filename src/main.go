@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -13,14 +14,15 @@ import (
 )
 
 const (
-	apiURL     = "http://a.basemaps.cartocdn.com/light_all/%d/%d/%d.png"
-	outputDir  = "data/Pornic"
 	maxStorage = 10 * (1 << 30) // 10 GB
-	tileSize   = 8 * (1 << 10)  // 8 KB
+	tileSize   = 8 * (1 << 10)  // 8 KB - approx size of each 256x256px tile
 )
 
 func downloadTile(z, x, y int, downloadedSize *int64, wg *sync.WaitGroup) {
 	defer wg.Done()
+
+	apiURL := os.Getenv("TMS_SERVER_URL")
+	outputDir := os.Getenv("OUTPUT_DIR")
 
 	url := fmt.Sprintf(apiURL, z, x, y)
 	resp, err := http.Get(url)
@@ -28,7 +30,12 @@ func downloadTile(z, x, y int, downloadedSize *int64, wg *sync.WaitGroup) {
 		log.Printf("Failed to download tile %d/%d/%d: %v\n", z, x, y, err)
 		return
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			log.Printf("Failed to close body: %v\n", err)
+		}
+	}(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
 		log.Printf("Failed to download tile %d/%d/%d: status code %d\n", z, x, y, resp.StatusCode)
@@ -63,10 +70,66 @@ func downloadTile(z, x, y int, downloadedSize *int64, wg *sync.WaitGroup) {
 	}
 }
 
-func main() {
-	minZoom, maxZoom := 17, 22
+func parseZoom() (int, int, error) {
+	minZoomEnv, maxZoomEnv := os.Getenv("MIN_ZOOM"), os.Getenv("MAX_ZOOM")
+	// Parse the string value as integer
+	minZoom, err := strconv.Atoi(minZoomEnv)
+	if err != nil {
+		fmt.Printf("Error parsing minZoom %s as an integer: %v\n", minZoomEnv, err)
+		return 0, 0, errors.New("failed to parse minZoom as int")
+	}
 
-	minLat, maxLat, minLng, maxLng := 47.1005, 47.1247, -2.1119, -2.0675
+	maxZoom, err := strconv.Atoi(maxZoomEnv)
+	if err != nil {
+		fmt.Printf("Error parsing maxZoom %s as an integer: %v\n", maxZoomEnv, err)
+		return 0, 0, errors.New("failed to parse maxZoom as int")
+	}
+	return minZoom, maxZoom, nil
+}
+
+func parseCoordinates() (float64, float64, float64, float64, error) {
+	minLat, maxLat := os.Getenv("MIN_LAT"), os.Getenv("MAX_LAT")
+	minLng, maxLng := os.Getenv("MIN_LNG"), os.Getenv("MAX_LNG")
+
+	// Parse the string value as float64
+	minLatFloat, err := strconv.ParseFloat(minLat, 64)
+	if err != nil {
+		fmt.Printf("Error parsing %s as float64: %v\n", minLat, err)
+		return 0, 0, 0, 0, err
+	}
+	maxLatFloat, err := strconv.ParseFloat(maxLat, 64)
+	if err != nil {
+		fmt.Printf("Error parsing %s as float64: %v\n", maxLat, err)
+		return 0, 0, 0, 0, err
+	}
+
+	minLngFloat, err := strconv.ParseFloat(minLng, 64)
+	if err != nil {
+		fmt.Printf("Error parsing %s as float64: %v\n", minLng, err)
+		return 0, 0, 0, 0, err
+	}
+
+	maxLngFloat, err := strconv.ParseFloat(maxLng, 64)
+	if err != nil {
+		fmt.Printf("Error parsing %s as float64: %v\n", maxLng, err)
+		return 0, 0, 0, 0, err
+	}
+
+	return minLatFloat, maxLatFloat, minLngFloat, maxLngFloat, nil
+}
+
+func main() {
+	minZoom, maxZoom, err := parseZoom()
+	if err != nil {
+		fmt.Printf("Error parsing zoom: %v\n", err)
+		os.Exit(-1)
+	}
+
+	minLat, maxLat, minLng, maxLng, err := parseCoordinates()
+	if err != nil {
+		fmt.Printf("Error parsing coordinates: %v\n", err)
+		os.Exit(-1)
+	}
 
 	var downloadedSize int64
 

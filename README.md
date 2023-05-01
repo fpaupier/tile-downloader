@@ -8,6 +8,11 @@ this project uses this layer TMS URL: http://a.basemaps.cartocdn.com/light_all/{
 
 ## Get started 
 
+### With docker
+1. Update the environment variable with your area of interest and zoom level in the `docker-compose`;
+2. Run ``docker-compose up -d``
+
+### Without docker
 Clone this project 
 ```shell
 git clone git@github.com:fpaupier/tile-downloader.git
